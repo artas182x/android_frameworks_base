@@ -130,7 +130,9 @@ public class SignalClusterTextView
     }
 
     private String getSignalLevelString(int dBm) {
-        if (dBm == 0) {
+        if (dBm == 0 || dBm == Integer.MAX_VALUE) {
+/* On the Galaxy Nexus (toro, the Verizon LTE variant) an LTE connection will
+ * report 0x7FFFFFFF (Integer.MAX_VALUE) while searching for a signal */
             return "-\u221e"; // -oo ('minus infinity')
         }
         return Integer.toString(dBm);

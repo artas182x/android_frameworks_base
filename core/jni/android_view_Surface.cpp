@@ -197,8 +197,10 @@ static inline void swapCanvasPtr(JNIEnv* env, jobject canvasObj, SkCanvas* newCa
   SkSafeUnref(previousCanvas);
 }
 
-static jint nativeLockCanvas(JNIEnv* env, jclass clazz,
+static jint __attribute__((optimize("no-strict-aliasing"))) nativeLockCanvas(JNIEnv* env, jclass clazz,
         jint nativeObject, jobject canvasObj, jobject dirtyRectObj) {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstrict-aliasing"
     sp<Surface> surface(reinterpret_cast<Surface *>(nativeObject));
 
     if (!isSurfaceValid(surface)) {
@@ -263,6 +265,7 @@ static jint nativeLockCanvas(JNIEnv* env, jclass clazz,
     sp<Surface> lockedSurface(surface);
     lockedSurface->incStrong(&sRefBaseOwner);
     return (int) lockedSurface.get();
+#pragma GCC diagnostic pop
 }
 
 static void nativeUnlockCanvasAndPost(JNIEnv* env, jclass clazz,

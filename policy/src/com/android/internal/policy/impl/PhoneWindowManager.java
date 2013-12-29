@@ -97,6 +97,7 @@ import android.view.animation.Animation;
 import android.view.animation.AnimationUtils;
 import android.widget.Toast;
 import android.hardware.input.InputManager;
+import android.provider.MediaStore;
 
 import com.android.internal.R;
 import com.android.internal.policy.PolicyManager;
@@ -442,6 +443,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
     boolean mHomeConsumed;
     boolean mAppSwitchLongPressed;
     boolean mHomeDoubleTapPending;
+    boolean mVirtualKeysHapticFeedback = true;
     Intent mHomeIntent;
     Intent mCarDockIntent;
     Intent mDeskDockIntent;
@@ -517,6 +519,8 @@ public class PhoneWindowManager implements WindowManagerPolicy {
     private boolean mPowerKeyTriggered;
     private long mPowerKeyTime;
     private boolean mVolumeWakeScreen;
+    private boolean mVolumeMusicControl;
+    private boolean mIsVolumeKeyLongPress;
 
     /* The number of steps between min and max brightness */
     private static final int BRIGHTNESS_STEPS = 10;
@@ -531,6 +535,9 @@ public class PhoneWindowManager implements WindowManagerPolicy {
     // Maps global key codes to the components that will handle them.
     private GlobalKeyManager mGlobalKeyManager;
 
+    private boolean mOffscreenGestureSupport;
+    private boolean mStartCameraFromGesture;
+
     // Fallback actions by key code.
     private final SparseArray<KeyCharacterMap.FallbackAction> mFallbackActions =
             new SparseArray<KeyCharacterMap.FallbackAction>();
@@ -539,6 +546,8 @@ public class PhoneWindowManager implements WindowManagerPolicy {
     private static final int MSG_DISABLE_POINTER_LOCATION = 2;
     private static final int MSG_DISPATCH_MEDIA_KEY_WITH_WAKE_LOCK = 3;
     private static final int MSG_DISPATCH_MEDIA_KEY_REPEAT_WITH_WAKE_LOCK = 4;
+    private static final int MSG_DISPATCH_GESTURE_MEDIA_KEY_WITH_WAKE_LOCK = 5;
+    private static final int MSG_DISPATCH_VOLKEY_WITH_WAKE_LOCK = 6;
 
     private class PolicyHandler extends Handler {
         @Override
@@ -555,6 +564,12 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                     break;
                 case MSG_DISPATCH_MEDIA_KEY_REPEAT_WITH_WAKE_LOCK:
                     dispatchMediaKeyRepeatWithWakeLock((KeyEvent)msg.obj);
+                    break;
+                case MSG_DISPATCH_VOLKEY_WITH_WAKE_LOCK:
+                    mIsVolumeKeyLongPress = true;
+                case MSG_DISPATCH_GESTURE_MEDIA_KEY_WITH_WAKE_LOCK:
+                    dispatchMediaKeyWithWakeLockToAudioService((KeyEvent)msg.obj);
+                    dispatchMediaKeyWithWakeLockToAudioService(KeyEvent.changeAction((KeyEvent)msg.obj, KeyEvent.ACTION_UP));
                     break;
             }
         }
@@ -603,6 +618,9 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                     Settings.System.VOLUME_WAKE_SCREEN), false, this,
                     UserHandle.USER_ALL);
             resolver.registerContentObserver(Settings.System.getUriFor(
+                    Settings.System.VOLUME_MUSIC_CONTROL), false, this,
+                    UserHandle.USER_ALL);
+            resolver.registerContentObserver(Settings.System.getUriFor(
                     Settings.System.KEY_HOME_ACTION), false, this,
                     UserHandle.USER_ALL);
             resolver.registerContentObserver(Settings.System.getUriFor(
@@ -641,6 +659,10 @@ public class PhoneWindowManager implements WindowManagerPolicy {
             resolver.registerContentObserver(Settings.System.getUriFor(
                     Settings.System.IMMERSIVE_MODE), false, this,
                     UserHandle.USER_ALL);
+            resolver.registerContentObserver(Settings.System.getUriFor(
+                    Settings.System.VIRTUAL_KEYS_HAPTIC_FEEDBACK), false, this,
+                    UserHandle.USER_ALL);
+
             updateSettings();
         }
 
@@ -1094,6 +1116,8 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                 com.android.internal.R.integer.config_deviceHardwareKeys);
         mBackKillTimeout = mContext.getResources().getInteger(
                 com.android.internal.R.integer.config_backKillTimeout);
+        mOffscreenGestureSupport = mContext.getResources().getBoolean(
+                com.android.internal.R.bool.config_offscreenGestureSupport);
 
         updateKeyAssignments();
 
@@ -1427,6 +1451,10 @@ public class PhoneWindowManager implements WindowManagerPolicy {
 
             mVolumeWakeScreen = Settings.System.getIntForUser(resolver,
                     Settings.System.VOLUME_WAKE_SCREEN, 0, UserHandle.USER_CURRENT) != 0;
+            mVirtualKeysHapticFeedback = Settings.System.getIntForUser(resolver,
+                    Settings.System.VIRTUAL_KEYS_HAPTIC_FEEDBACK, 1, UserHandle.USER_CURRENT) != 0;
+            mVolumeMusicControl = Settings.System.getIntForUser(resolver,
+                    Settings.System.VOLUME_MUSIC_CONTROL, 0, UserHandle.USER_CURRENT) != 0;
 
             updateKeyAssignments();
 
@@ -4388,28 +4416,24 @@ public class PhoneWindowManager implements WindowManagerPolicy {
             policyFlags |= WindowManagerPolicy.FLAG_WAKE;
         }
 
-
-        // no volume wake handling if screen off because of proxy sensor
-        final boolean isOffByProx = (mScreenOffReason == WindowManagerPolicy.OFF_BECAUSE_OF_PROX_SENSOR);
-
-        boolean isVolumeWakeKey = !isOffByProx &&
-                mVolumeWakeScreen &&
-                (keyCode == KeyEvent.KEYCODE_VOLUME_UP ||
-                 keyCode == KeyEvent.KEYCODE_VOLUME_DOWN);
+        boolean isOffscreenWakeKey = false;
+        if (mOffscreenGestureSupport) {
+            isOffscreenWakeKey = isOffscreenWakeKey(keyCode);
+        }
 
         boolean isWakeKey = (policyFlags
                 & (WindowManagerPolicy.FLAG_WAKE | WindowManagerPolicy.FLAG_WAKE_DROPPED)) != 0 ||
-                isVolumeWakeKey;
+                isOffscreenWakeKey;
 
         if (DEBUG_INPUT) {
             Slog.d(TAG, "interceptKeyTq keycode=" + keyCode
                     + " screenIsOn=" + isScreenOn + " keyguardActive=" + keyguardActive
                     + " policyFlags=" + Integer.toHexString(policyFlags)
-                    + " isWakeKey=" + isWakeKey);
+                    + " isWakeKey=" + isWakeKey + " scanCode=" + event.getScanCode());
         }
 
         if (down && (policyFlags & WindowManagerPolicy.FLAG_VIRTUAL) != 0
-                && event.getRepeatCount() == 0) {
+                && event.getRepeatCount() == 0 && mVirtualKeysHapticFeedback) {
             performHapticFeedbackLw(null, HapticFeedbackConstants.VIRTUAL_KEY, false);
         }
 
@@ -4512,11 +4536,40 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                             Log.w(TAG, "ITelephony threw RemoteException", ex);
                         }
                     }
+                }
+                if (keyCode != KeyEvent.KEYCODE_VOLUME_MUTE && (result & ACTION_PASS_TO_USER) == 0) {
+                    if (isMusicActive() && mVolumeMusicControl && down) {
+                        mIsVolumeKeyLongPress = false;
+                        Message msg = null;
 
-                    if (isMusicActive() && (result & ACTION_PASS_TO_USER) == 0) {
-                        // If music is playing but we decided not to pass the key to the
-                        // application, handle the volume change here.
-                        handleVolumeKey(AudioManager.STREAM_MUSIC, keyCode);
+                        if (event.getKeyCode() == KeyEvent.KEYCODE_VOLUME_UP){
+                            msg = createMediaEventMessage(event, MSG_DISPATCH_VOLKEY_WITH_WAKE_LOCK,
+                                    KeyEvent.KEYCODE_MEDIA_NEXT);
+                        } else if (event.getKeyCode() == KeyEvent.KEYCODE_VOLUME_DOWN){
+                            msg = createMediaEventMessage(event, MSG_DISPATCH_VOLKEY_WITH_WAKE_LOCK,
+                                    KeyEvent.KEYCODE_MEDIA_PREVIOUS);
+                        }
+                        if (msg != null) {
+                            msg.setAsynchronous(true);
+                            mHandler.sendMessageDelayed(msg, ViewConfiguration.getLongPressTimeout());
+                        }
+                        break;
+                    } else {
+                        if (mVolumeMusicControl && !down) {
+                            mHandler.removeMessages(MSG_DISPATCH_VOLKEY_WITH_WAKE_LOCK);
+                            if (mIsVolumeKeyLongPress) {
+                                break;
+                            }
+                        }
+                        if (!isScreenOn && !mVolumeWakeScreen) {
+                            handleVolumeKey(AudioManager.STREAM_MUSIC, keyCode);
+                        }
+                    }
+
+                    if (isScreenOn || !mVolumeWakeScreen) {
+                        break;
+                    } else {
+                        result |= ACTION_WAKE_UP;
                         break;
                     }
                 }
@@ -4662,6 +4715,10 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                 break;
             }
         }
+
+        if (!isScreenOn && mOffscreenGestureSupport) {
+            handleOffscreenGesture(event, keyCode, result, down);
+        }
         return result;
     }
 
@@ -4673,13 +4730,16 @@ public class PhoneWindowManager implements WindowManagerPolicy {
      * is always considered a wake key.
      */
     private boolean isWakeKeyWhenScreenOff(int keyCode) {
+        if (mOffscreenGestureSupport){
+            if (isOffscreenWakeKey(keyCode)){
+                return true;
+            }
+        }
+
         switch (keyCode) {
             // ignore volume keys unless docked
             case KeyEvent.KEYCODE_VOLUME_UP:
             case KeyEvent.KEYCODE_VOLUME_DOWN:
-                if (mVolumeWakeScreen){
-                    return true;
-                }
             case KeyEvent.KEYCODE_VOLUME_MUTE:
                 return mDockMode != Intent.EXTRA_DOCK_STATE_UNDOCKED;
 
@@ -4938,6 +4998,11 @@ public class PhoneWindowManager implements WindowManagerPolicy {
 
         if (screenOnListener != null) {
             screenOnListener.onScreenOn();
+        }
+
+        if (mStartCameraFromGesture){
+            dismissKeyguardLw();
+            startCameraFromGesture();
         }
     }
 
@@ -5645,7 +5710,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
             return false;
         }
         final boolean hapticsDisabled = Settings.System.getIntForUser(mContext.getContentResolver(),
-                Settings.System.HAPTIC_FEEDBACK_ENABLED, 0, UserHandle.USER_CURRENT) == 0;
+                Settings.System.HAPTIC_FEEDBACK_ENABLED, 1, UserHandle.USER_CURRENT) == 0;
         if (!always && (hapticsDisabled || mKeyguardDelegate.isShowingAndNotHidden())) {
             return false;
         }
@@ -6089,5 +6154,83 @@ public class PhoneWindowManager implements WindowManagerPolicy {
         pw.print(prefix); pw.print("mUndockedHdmiRotation="); pw.println(mUndockedHdmiRotation);
         mStatusBarController.dump(pw, prefix);
         mNavigationBarController.dump(pw, prefix);
+    }
+
+    private boolean isOffscreenWakeKey(int keyCode) {
+        return keyCode == KeyEvent.KEYCODE_F3 ||
+            keyCode == KeyEvent.KEYCODE_F4;
+    }
+
+    private void handleOffscreenGesture(KeyEvent event, int keyCode, int result, boolean down) {
+        switch (keyCode) {
+            case KeyEvent.KEYCODE_F4:
+                // O gesture
+                if (down){
+                    if (DEBUG_INPUT){
+                        Slog.d(TAG, "handleOffscreenGesture: " + "O gesture");
+                    }
+                    mStartCameraFromGesture = true;
+                }
+                break;
+            case KeyEvent.KEYCODE_F5:
+                // V gesture
+                if (down){
+                    if (DEBUG_INPUT){
+                        Slog.d(TAG, "handleOffscreenGesture: " + "V gesture");
+                    }
+                    mContext.sendBroadcastAsUser(new Intent("org.omnirom.torch.TOGGLE_FLASHLIGHT"),
+                            UserHandle.CURRENT_OR_SELF);
+                }
+                break;
+            case KeyEvent.KEYCODE_F6:
+                // II gesture
+                if (down && (result & ACTION_PASS_TO_USER) == 0) {
+                    if (DEBUG_INPUT){
+                        Slog.d(TAG, "handleOffscreenGesture: " + "II gesture");
+                    }
+                    Message msg = createMediaEventMessage(event, MSG_DISPATCH_GESTURE_MEDIA_KEY_WITH_WAKE_LOCK,
+                            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE);
+                    msg.setAsynchronous(true);
+                    msg.sendToTarget();
+                }
+                break;
+            case KeyEvent.KEYCODE_F7:
+                // < gesture
+                if (down && isMusicActive() && (result & ACTION_PASS_TO_USER) == 0) {
+                    if (DEBUG_INPUT){
+                        Slog.d(TAG, "handleOffscreenGesture: " + "< gesture");
+                    }
+                    Message msg = createMediaEventMessage(event, MSG_DISPATCH_GESTURE_MEDIA_KEY_WITH_WAKE_LOCK,
+                            KeyEvent.KEYCODE_MEDIA_PREVIOUS);
+                    msg.setAsynchronous(true);
+                    msg.sendToTarget();
+                }
+                break;
+            case KeyEvent.KEYCODE_F8:
+                // > gesture
+                if (down && isMusicActive() && (result & ACTION_PASS_TO_USER) == 0) {
+                    if (DEBUG_INPUT){
+                        Slog.d(TAG, "handleOffscreenGesture: " + "> gesture");
+                    }
+                    Message msg = createMediaEventMessage(event, MSG_DISPATCH_GESTURE_MEDIA_KEY_WITH_WAKE_LOCK,
+                            KeyEvent.KEYCODE_MEDIA_NEXT);
+                    msg.setAsynchronous(true);
+                    msg.sendToTarget();
+                }
+                break;
+        }
+    }
+
+    private Message createMediaEventMessage(KeyEvent event, int msgId, int eventId) {
+        return mHandler.obtainMessage(msgId,
+                new KeyEvent(event.getDownTime(), event.getEventTime(),
+                        event.getAction(), eventId, 0));
+    }
+
+    private void startCameraFromGesture() {
+        Intent intent = new Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        mContext.startActivityAsUser(intent, UserHandle.CURRENT);
+        mStartCameraFromGesture = false;
     }
 }

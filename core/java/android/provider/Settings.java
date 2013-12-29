@@ -2549,7 +2549,26 @@ public final class Settings {
          */
         public static final String SCREENRECORD_IN_POWER_MENU = "screenrecord_in_power_menu";
 
-        /** Sprint MWI Quirk: Show message wait indicator notifications
+        /**
+         * Show AirplaneMode in Power Menu
+         * @hide
+         */
+        public static final String AIRPLANE_MODE_IN_POWER_MENU = "airplane_mode_in_power_menu";
+
+        /**
+         * Show SoundToggle in Power Menu
+         * @hide
+         */
+        public static final String SOUND_TOGGLES_IN_POWER_MENU = "sound_toggles_in_power_menu";
+
+        /**
+         * Show MobileData in Power Menu
+         * @hide
+         */
+        public static final String MOBILE_DATA_IN_POWER_MENU = "mobile_data_in_power_menu";
+
+        /**
+         * Sprint MWI Quirk: Show message wait indicator notifications
          * @hide
          */
         public static final String ENABLE_MWI_NOTIFICATION = "enable_mwi_notification";
@@ -2838,6 +2857,12 @@ public final class Settings {
         public static final String VOLUME_WAKE_SCREEN = "volume_wake_screen";
 
         /**
+         * volume rocker music track control enable/disable
+         * @hide
+         */
+        public static final String VOLUME_MUSIC_CONTROL = "volume_music_control";
+
+        /**
          * Show clear all recents button
          *  @hide
          */
@@ -2994,6 +3019,12 @@ public final class Settings {
          */
         public static final String KEY_APP_SWITCH_LONG_PRESS_ACTION = "key_app_switch_long_press_action";
 
+        /**
+         * Enable/disable haptic feedback for virtual keys
+         * @hide
+         */
+        public static final String VIRTUAL_KEYS_HAPTIC_FEEDBACK = "virtual_keys_haptic_feedback";
+
         /** Weather to allow headsethook to launch voice commands
          * @hide
          */
@@ -3116,6 +3147,12 @@ public final class Settings {
             "navigation_ring_targets_1",
             "navigation_ring_targets_2",
         };
+
+        /**
+         * Whether to have statusbar right side pulldown.  The value is boolean (1 or 0).
+         * @hide
+         */
+        public static final String STATUS_BAR_QS_QUICK_PULLDOWN = "status_bar_qs_quick_pulldown";
 
         /**
          * Settings to backup. This is here so that it's in the same place as the settings

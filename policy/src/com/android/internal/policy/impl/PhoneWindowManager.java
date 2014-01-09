@@ -18,6 +18,7 @@ package com.android.internal.policy.impl;
 
 import android.app.Activity;
 import android.app.ActivityManager;
+import android.app.ActivityManager.RunningAppProcessInfo;
 import android.app.ActivityManagerNative;
 import android.app.AppOpsManager;
 import android.app.IUiModeManager;
@@ -56,6 +57,7 @@ import android.os.IRemoteCallback;
 import android.os.Looper;
 import android.os.Message;
 import android.os.Messenger;
+import android.os.Process;
 import android.os.PowerManager;
 import android.os.RemoteException;
 import android.os.ServiceManager;
@@ -174,6 +176,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
     private static final int KEY_ACTION_BACK = 7;
     private static final int KEY_ACTION_LAST_APP = 8;
     private static final int KEY_ACTION_KILL_APP = 9;
+    private static final int KEY_ACTION_SLEEP = 10;
 
     // Masks for checking presence of hardware keys.
     // Must match values in core/res/res/values/config.xml
@@ -329,6 +332,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
     int mPointerLocationMode = 0; // guarded by mLock
     int mDeviceHardwareKeys;
     int mBackKillTimeout;
+    boolean mBackKillPending;
     boolean mHasBackKey;
     boolean mHasHomeKey;
     boolean mHasMenuKey;
@@ -666,7 +670,8 @@ public class PhoneWindowManager implements WindowManagerPolicy {
             updateSettings();
         }
 
-        @Override public void onChange(boolean selfChange) {
+        @Override
+        public void onChange(boolean selfChange) {
             updateSettings();
             updateRotation(false);
         }
@@ -989,9 +994,13 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                 break;
             case KEY_ACTION_KILL_APP:
                 mHandler.postDelayed(mKillTask, mBackKillTimeout);
+                mBackKillPending = true;
                 break;
             case KEY_ACTION_LAST_APP:
                 toggleLastApp();
+                break;
+            case KEY_ACTION_SLEEP:
+                mPowerManager.goToSleep(SystemClock.uptimeMillis());
                 break;
             default:
                 break;
@@ -2305,6 +2314,12 @@ public class PhoneWindowManager implements WindowManagerPolicy {
             }
         }
 
+        // if a kill app is pending and we lift finger
+        // stop the kill action
+        if (mBackKillPending && !down) {
+            mHandler.removeCallbacks(mKillTask);
+        }
+
         // First we always handle the home key here, so applications
         // can never break it, although if keyguard is on, we do let
         // it handle it, because that gives us the correct 5 second
@@ -2930,9 +2945,8 @@ public class PhoneWindowManager implements WindowManagerPolicy {
     // maxwen: TODO would make sense to put this in a general place
     Runnable mKillTask = new Runnable() {
         public void run() {
+            mBackKillPending = false;
             final Intent intent = new Intent(Intent.ACTION_MAIN);
-            final ActivityManager am = (ActivityManager)mContext
-                    .getSystemService(Activity.ACTIVITY_SERVICE);
             String defaultHomePackage = "com.android.launcher";
             intent.addCategory(Intent.CATEGORY_HOME);
             final ResolveInfo res = mContext.getPackageManager().resolveActivity(intent, 0);
@@ -2940,14 +2954,35 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                 defaultHomePackage = res.activityInfo.packageName;
             }
             boolean targetKilled = false;
-            String packageName = am.getRunningTasks(1).get(0).topActivity.getPackageName();
-            if (!defaultHomePackage.equals(packageName)) {
-                am.forceStopPackage(packageName);
-                targetKilled = true;
-            }
-            if (targetKilled) {
-                performHapticFeedbackLw(null, HapticFeedbackConstants.LONG_PRESS, false);
-                Toast.makeText(mContext, R.string.app_killed_message, Toast.LENGTH_SHORT).show();
+            final ActivityManager am = (ActivityManager) mContext
+                    .getSystemService(Activity.ACTIVITY_SERVICE);
+            List<RunningAppProcessInfo> apps = am.getRunningAppProcesses();
+            for (RunningAppProcessInfo appInfo : apps) {
+                int uid = appInfo.uid;
+                // Make sure it's a foreground user application (not system,
+                // root, phone, etc.)
+                if (uid >= Process.FIRST_APPLICATION_UID && uid <= Process.LAST_APPLICATION_UID
+                        && appInfo.importance == RunningAppProcessInfo.IMPORTANCE_FOREGROUND) {
+                    if (appInfo.pkgList != null && (appInfo.pkgList.length > 0)) {
+                        for (String pkg : appInfo.pkgList) {
+                            if (!pkg.equals("com.android.systemui")
+                                    && !pkg.equals(defaultHomePackage)) {
+                                am.forceStopPackage(pkg);
+                                targetKilled = true;
+                                break;
+                            }
+                        }
+                    } else {
+                        Process.killProcess(appInfo.pid);
+                        targetKilled = true;
+                    }
+                }
+                if (targetKilled) {
+                    performHapticFeedbackLw(null, HapticFeedbackConstants.LONG_PRESS, false);
+                    Toast.makeText(mContext,
+                        com.android.internal.R.string.app_killed_message, Toast.LENGTH_SHORT).show();
+                    break;
+                }
             }
         }
     };
@@ -5804,6 +5839,16 @@ public class PhoneWindowManager implements WindowManagerPolicy {
         } else {
             mClearedBecauseOfForceShow = false;
         }
+        // The window who requested navbar force showing disappeared and next window wants
+        // to hide navbar. Instead of hiding we will make it transient. SystemUI will take care
+        // about hiding after timeout. This should not happen if next window is keyguard because
+        // transient state have more priority than translucent (why?) and cause bad UX
+        if (wasCleared && !mClearedBecauseOfForceShow
+                && (tmpVisibility & View.SYSTEM_UI_FLAG_HIDE_NAVIGATION) != 0) {
+            mNavigationBarController.showTransient();
+            tmpVisibility |= View.NAVIGATION_BAR_TRANSIENT;
+            mWindowManagerFuncs.addSystemUIVisibilityFlag(View.NAVIGATION_BAR_TRANSIENT);
+        }
         int visibility = updateSystemBarsLw(win, mLastSystemUiFlags, tmpVisibility);
         final int diff = visibility ^ mLastSystemUiFlags;
         final boolean needsMenu = win.getNeedsMenuLw(mTopFullscreenOpaqueWindowState);
@@ -5811,12 +5856,7 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                 && mFocusedApp == win.getAppToken()) {
             return 0;
         }
-        if (wasCleared && !mClearedBecauseOfForceShow
-                && (visibility & View.SYSTEM_UI_FLAG_HIDE_NAVIGATION) != 0) {
-            mNavigationBarController.showTransient();
-            visibility |= View.NAVIGATION_BAR_TRANSIENT;
-            mWindowManagerFuncs.addSystemUIVisibilityFlag(View.NAVIGATION_BAR_TRANSIENT);
-        }
+
         final int visibility2 = visibility;
         mLastSystemUiFlags = visibility;
         mLastFocusNeedsMenu = needsMenu;

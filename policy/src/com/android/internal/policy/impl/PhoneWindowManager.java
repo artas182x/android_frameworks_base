@@ -2386,14 +2386,14 @@ public class PhoneWindowManager implements WindowManagerPolicy {
             // If we have released the home key, and didn't do anything else
             // while it was pressed, then it is time to go home!
             if (!down && mHomePressed) {
-                if (mRecentAppsPreloaded) {
-                    cancelPreloadRecentApps();
-                }
-
                 mHomePressed = false;
                 if (mHomeConsumed) {
                     mHomeConsumed = false;
                     return -1;
+                }
+
+                if (mRecentAppsPreloaded && mDoubleTapOnHomeBehavior != KEY_ACTION_APP_SWITCH) {
+                    cancelPreloadRecentApps();
                 }
 
                 if (canceled) {
@@ -4579,8 +4579,8 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                         }
                     }
                 }
-                if (keyCode != KeyEvent.KEYCODE_VOLUME_MUTE && (result & ACTION_PASS_TO_USER) == 0) {
-                    if (isMusicActive() && mVolumeMusicControl && down) {
+                if (isMusicActive() && (result & ACTION_PASS_TO_USER) == 0) {
+                    if (mVolumeMusicControl && down && (keyCode != KeyEvent.KEYCODE_VOLUME_MUTE)) {
                         mIsVolumeKeyLongPress = false;
                         Message msg = null;
 
@@ -4604,18 +4604,22 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                             }
                         }
                         if (!isScreenOn && !mVolumeWakeScreen) {
-                            handleVolumeKey(AudioManager.STREAM_MUSIC, keyCode);
+                            if (mVolumeMusicControl) {
+                                // we will only enter this on !down
+                                handleVolumeKey(AudioManager.STREAM_MUSIC, keyCode);
+                            } else if(!down){
+                                // else we would handle it twice
+                                handleVolumeKey(AudioManager.STREAM_MUSIC, keyCode);
+                            }
                         }
                     }
-
-                    if (isScreenOn || !mVolumeWakeScreen) {
-                        break;
-                    } else {
-                        result |= ACTION_WAKE_UP;
-                        break;
-                    }
                 }
-                break;
+                if (isScreenOn || !mVolumeWakeScreen) {
+                    break;
+                } else {
+                    result |= ACTION_WAKE_UP;
+                    break;
+                }
             }
 
             case KeyEvent.KEYCODE_ENDCALL: {

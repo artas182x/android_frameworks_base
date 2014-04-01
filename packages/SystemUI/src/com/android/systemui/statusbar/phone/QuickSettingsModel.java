@@ -1390,6 +1390,7 @@ class QuickSettingsModel implements BluetoothStateChangeCallback,
                     } else {
                         return r.getString(R.string.network_3G);
                     }
+            }
         } else {
             switch (state) {
                 case Phone.NT_MODE_GLOBAL:

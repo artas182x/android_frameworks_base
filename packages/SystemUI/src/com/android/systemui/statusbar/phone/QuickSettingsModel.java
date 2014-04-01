@@ -555,6 +555,7 @@ class QuickSettingsModel implements BluetoothStateChangeCallback,
 
     private QuickSettingsTileView mMobileNetworkTile;
     private RefreshCallback mMobileNetworkCallback;
+    private boolean mToroRIL = SystemProperties.getInt("ro.telephony.toroRIL", 0) == 1;
     private State mMobileNetworkState = new State();
 
     private QuickSettingsTileView mBluetoothTile;
@@ -1268,56 +1269,87 @@ class QuickSettingsModel implements BluetoothStateChangeCallback,
         boolean usesQcLte = SystemProperties.getBoolean(
                         "ro.config.qc_lte_network_modes", false);
         int network = get2G3G();
-        switch(network) {
-            case Phone.NT_MODE_GLOBAL:
-            case Phone.NT_MODE_LTE_GSM_WCDMA:
-            case Phone.NT_MODE_LTE_ONLY:
-            case Phone.NT_MODE_LTE_WCDMA:
-                if (DeviceUtils.deviceSupportsLteGsm(mContext)) {
-                    mTM.toggleMobileNetwork(Phone.NT_MODE_GSM_ONLY);
-                } else if (DeviceUtils.deviceSupportsLteCdma(mContext)) {
+        /* This is needed to work around a bug where toro's RIL
+           believes network mode 7 (GLOBAL) is CDMA/LTE/EVDO.
+           Also, this whole switch was just a mess in the first place.
+           Note, it uses the current network to figure out what to switch to.
+           toro only does modes 7 (GLOBAL) and 4 (CDMA), so that's all
+           that's needed in the switch for ro.telephony.toroRIL. */
+        if (mToroRIL) {
+            switch(network) {
+                case Phone.NT_MODE_GLOBAL:
+                case Phone.NT_MODE_LTE_GSM_WCDMA:
+                case Phone.NT_MODE_LTE_ONLY:
+                case Phone.NT_MODE_LTE_WCDMA:
+                case Phone.NT_MODE_LTE_CDMA_AND_EVDO:
+                case Phone.NT_MODE_LTE_CMDA_EVDO_GSM_WCDMA:
                     mTM.toggleMobileNetwork(Phone.NT_MODE_CDMA);
-                }
-                break;
-            case Phone.NT_MODE_LTE_CDMA_AND_EVDO:
-            case Phone.NT_MODE_LTE_CMDA_EVDO_GSM_WCDMA:
-                mTM.toggleMobileNetwork(Phone.NT_MODE_CDMA_NO_EVDO);
-                break;
-            case Phone.NT_MODE_CDMA_NO_EVDO:
-            case Phone.NT_MODE_EVDO_NO_CDMA:
-                mTM.toggleMobileNetwork(Phone.NT_MODE_CDMA);
-                break;
-            case Phone.NT_MODE_CDMA:
-                if (DeviceUtils.deviceSupportsLteCdma(mContext)) {
-                    if (usesQcLte) {
-                        mTM.toggleMobileNetwork(Phone.NT_MODE_GLOBAL);
-                    } else {
-                        mTM.toggleMobileNetwork(Phone.NT_MODE_LTE_CDMA_AND_EVDO);
+                    break;
+                case Phone.NT_MODE_CDMA_NO_EVDO:
+                case Phone.NT_MODE_EVDO_NO_CDMA:
+                case Phone.NT_MODE_CDMA:
+                case Phone.NT_MODE_GSM_UMTS:
+                case Phone.NT_MODE_WCDMA_ONLY:
+                case Phone.NT_MODE_GSM_ONLY:
+                case Phone.NT_MODE_WCDMA_PREF:
+                    mTM.toggleMobileNetwork(Phone.NT_MODE_GLOBAL);
+                    break;
+                default:
+                    mTM.toggleMobileNetwork(Phone.NT_MODE_GLOBAL);
+                    break;
+            }
+        } else {
+            switch(network) {
+                case Phone.NT_MODE_GLOBAL:
+                case Phone.NT_MODE_LTE_GSM_WCDMA:
+                case Phone.NT_MODE_LTE_ONLY:
+                case Phone.NT_MODE_LTE_WCDMA:
+                    if (DeviceUtils.deviceSupportsLteGsm(mContext)) {
+                        mTM.toggleMobileNetwork(Phone.NT_MODE_GSM_ONLY);
+                    } else if (DeviceUtils.deviceSupportsLteCdma(mContext)) {
+                        mTM.toggleMobileNetwork(Phone.NT_MODE_CDMA);
                     }
-                } else {
+                    break;
+                case Phone.NT_MODE_LTE_CDMA_AND_EVDO:
+                case Phone.NT_MODE_LTE_CMDA_EVDO_GSM_WCDMA:
                     mTM.toggleMobileNetwork(Phone.NT_MODE_CDMA_NO_EVDO);
-                }
-                break;
-            case Phone.NT_MODE_GSM_UMTS:
-                mTM.toggleMobileNetwork(Phone.NT_MODE_WCDMA_PREF);
-                break;
-            case Phone.NT_MODE_WCDMA_ONLY:
-                mTM.toggleMobileNetwork(Phone.NT_MODE_GSM_UMTS);
-                break;
-            case Phone.NT_MODE_GSM_ONLY:
-                mTM.toggleMobileNetwork(Phone.NT_MODE_WCDMA_ONLY);
-                break;
-            case Phone.NT_MODE_WCDMA_PREF:
-                if (DeviceUtils.deviceSupportsLteGsm(mContext)) {
-                    if (usesQcLte) {
-                        mTM.toggleMobileNetwork(Phone.NT_MODE_GLOBAL);
+                    break;
+                case Phone.NT_MODE_CDMA_NO_EVDO:
+                case Phone.NT_MODE_EVDO_NO_CDMA:
+                    mTM.toggleMobileNetwork(Phone.NT_MODE_CDMA);
+                    break;
+                case Phone.NT_MODE_CDMA:
+                    if (DeviceUtils.deviceSupportsLteCdma(mContext)) {
+                        if (usesQcLte) {
+                            mTM.toggleMobileNetwork(Phone.NT_MODE_GLOBAL);
+                        } else {
+                            mTM.toggleMobileNetwork(Phone.NT_MODE_LTE_CDMA_AND_EVDO);
+                        }
                     } else {
-                        mTM.toggleMobileNetwork(Phone.NT_MODE_LTE_GSM_WCDMA);
+                        mTM.toggleMobileNetwork(Phone.NT_MODE_CDMA_NO_EVDO);
                     }
-                } else {
-                    mTM.toggleMobileNetwork(Phone.NT_MODE_GSM_ONLY);
-                }
-                break;
+                    break;
+                case Phone.NT_MODE_GSM_UMTS:
+                    mTM.toggleMobileNetwork(Phone.NT_MODE_WCDMA_PREF);
+                    break;
+                case Phone.NT_MODE_WCDMA_ONLY:
+                    mTM.toggleMobileNetwork(Phone.NT_MODE_GSM_UMTS);
+                    break;
+                case Phone.NT_MODE_GSM_ONLY:
+                    mTM.toggleMobileNetwork(Phone.NT_MODE_WCDMA_ONLY);
+                    break;
+                case Phone.NT_MODE_WCDMA_PREF:
+                    if (DeviceUtils.deviceSupportsLteGsm(mContext)) {
+                        if (usesQcLte) {
+                            mTM.toggleMobileNetwork(Phone.NT_MODE_GLOBAL);
+                        } else {
+                            mTM.toggleMobileNetwork(Phone.NT_MODE_LTE_GSM_WCDMA);
+                        }
+                    } else {
+                        mTM.toggleMobileNetwork(Phone.NT_MODE_GSM_ONLY);
+                    }
+                    break;
+            }
         }
     }
 
@@ -1329,69 +1361,124 @@ class QuickSettingsModel implements BluetoothStateChangeCallback,
         boolean isEnabled = isMobileDataEnabled();
 
         int state = get2G3G();
-        switch (state) {
-            case Phone.NT_MODE_GLOBAL:
-            case Phone.NT_MODE_LTE_CDMA_AND_EVDO:
-            case Phone.NT_MODE_LTE_GSM_WCDMA:
-            case Phone.NT_MODE_LTE_CMDA_EVDO_GSM_WCDMA:
-            case Phone.NT_MODE_LTE_ONLY:
-            case Phone.NT_MODE_LTE_WCDMA:
-                if (!isEnabled) {
-                    return r.getString(R.string.network_4G) + r.getString(R.string.quick_settings_network_disable);
-                } else {
-                    return r.getString(R.string.network_4G);
-                }
-            case Phone.NT_MODE_GSM_UMTS:
-                if (!isEnabled) {
-                    return r.getString(R.string.network_3G_auto) + r.getString(R.string.quick_settings_network_disable);
-                } else {
-                    return r.getString(R.string.network_3G_auto);
-                }
-            case Phone.NT_MODE_WCDMA_ONLY:
-                if (!isEnabled) {
-                    return r.getString(R.string.network_3G_only) + r.getString(R.string.quick_settings_network_disable);
-                } else {
-                    return r.getString(R.string.network_3G_only);
-                }
-            case Phone.NT_MODE_EVDO_NO_CDMA:
-            case Phone.NT_MODE_CDMA_NO_EVDO:
-            case Phone.NT_MODE_GSM_ONLY:
-                if (!isEnabled) {
-                    return r.getString(R.string.network_2G) + r.getString(R.string.quick_settings_network_disable);
-                } else {
-                    return r.getString(R.string.network_2G);
-                }
-            case Phone.NT_MODE_CDMA:
-            case Phone.NT_MODE_WCDMA_PREF:
-                if (!isEnabled) {
-                    return r.getString(R.string.network_3G) + r.getString(R.string.quick_settings_network_disable);
-                } else {
-                    return r.getString(R.string.network_3G);
-                }
+        /* This is needed to work around a bug where toro's RIL
+           believes network mode 7 (GLOBAL) is CDMA/LTE/EVDO.
+           toro only does modes 7 (GLOBAL) and 4 (CDMA), so that's all
+           that's needed in the switch for ro.telephony.toroRIL. */
+        if (mToroRIL) {
+            switch (state) {
+                case Phone.NT_MODE_GLOBAL:
+                case Phone.NT_MODE_LTE_CDMA_AND_EVDO:
+                case Phone.NT_MODE_LTE_GSM_WCDMA:
+                case Phone.NT_MODE_LTE_CMDA_EVDO_GSM_WCDMA:
+                case Phone.NT_MODE_LTE_ONLY:
+                case Phone.NT_MODE_LTE_WCDMA:
+                    if (!isEnabled) {
+                        return r.getString(R.string.network_4G) + r.getString(R.string.quick_settings_network_disable);
+                    } else {
+                        return r.getString(R.string.network_4G);
+                    }
+                case Phone.NT_MODE_GSM_UMTS:
+                case Phone.NT_MODE_WCDMA_ONLY:
+                case Phone.NT_MODE_EVDO_NO_CDMA:
+                case Phone.NT_MODE_CDMA_NO_EVDO:
+                case Phone.NT_MODE_GSM_ONLY:
+                case Phone.NT_MODE_CDMA:
+                case Phone.NT_MODE_WCDMA_PREF:
+                    if (!isEnabled) {
+                        return r.getString(R.string.network_3G) + r.getString(R.string.quick_settings_network_disable);
+                    } else {
+                        return r.getString(R.string.network_3G);
+                    }
+        } else {
+            switch (state) {
+                case Phone.NT_MODE_GLOBAL:
+                case Phone.NT_MODE_LTE_CDMA_AND_EVDO:
+                case Phone.NT_MODE_LTE_GSM_WCDMA:
+                case Phone.NT_MODE_LTE_CMDA_EVDO_GSM_WCDMA:
+                case Phone.NT_MODE_LTE_ONLY:
+                case Phone.NT_MODE_LTE_WCDMA:
+                    if (!isEnabled) {
+                        return r.getString(R.string.network_4G) + r.getString(R.string.quick_settings_network_disable);
+                    } else {
+                        return r.getString(R.string.network_4G);
+                    }
+                case Phone.NT_MODE_GSM_UMTS:
+                    if (!isEnabled) {
+                        return r.getString(R.string.network_3G_auto) + r.getString(R.string.quick_settings_network_disable);
+                    } else {
+                        return r.getString(R.string.network_3G_auto);
+                    }
+                case Phone.NT_MODE_WCDMA_ONLY:
+                    if (!isEnabled) {
+                        return r.getString(R.string.network_3G_only) + r.getString(R.string.quick_settings_network_disable);
+                    } else {
+                        return r.getString(R.string.network_3G_only);
+                    }
+                case Phone.NT_MODE_EVDO_NO_CDMA:
+                case Phone.NT_MODE_CDMA_NO_EVDO:
+                case Phone.NT_MODE_GSM_ONLY:
+                    if (!isEnabled) {
+                        return r.getString(R.string.network_2G) + r.getString(R.string.quick_settings_network_disable);
+                    } else {
+                        return r.getString(R.string.network_2G);
+                    }
+                case Phone.NT_MODE_CDMA:
+                case Phone.NT_MODE_WCDMA_PREF:
+                    if (!isEnabled) {
+                        return r.getString(R.string.network_3G) + r.getString(R.string.quick_settings_network_disable);
+                    } else {
+                        return r.getString(R.string.network_3G);
+                    }
+            }
         }
         return r.getString(R.string.quick_settings_network_unknown);
     }
 
     private int getNetworkTypeIcon() {
         int state = get2G3G();
-        switch (state) {
-            case Phone.NT_MODE_GLOBAL:
-            case Phone.NT_MODE_LTE_CDMA_AND_EVDO:
-            case Phone.NT_MODE_LTE_GSM_WCDMA:
-            case Phone.NT_MODE_LTE_CMDA_EVDO_GSM_WCDMA:
-            case Phone.NT_MODE_LTE_ONLY:
-            case Phone.NT_MODE_LTE_WCDMA:
-                return R.drawable.ic_qs_lte_on;
-            case Phone.NT_MODE_WCDMA_ONLY:
-                return R.drawable.ic_qs_3g_on;
-            case Phone.NT_MODE_CDMA_NO_EVDO:
-            case Phone.NT_MODE_EVDO_NO_CDMA:
-            case Phone.NT_MODE_GSM_ONLY:
-                return R.drawable.ic_qs_2g_on;
-            case Phone.NT_MODE_CDMA:
-            case Phone.NT_MODE_WCDMA_PREF:
-            case Phone.NT_MODE_GSM_UMTS:
-                return R.drawable.ic_qs_2g3g_on;
+        /* This is needed to work around a bug where toro's RIL
+           believes network mode 7 (GLOBAL) is CDMA/LTE/EVDO.
+           toro only does modes 7 (GLOBAL) and 4 (CDMA), so that's all
+           that's needed in the switch for ro.telephony.toroRIL. */
+        if (mToroRIL) {
+            switch (state) {
+                case Phone.NT_MODE_GLOBAL:
+                case Phone.NT_MODE_LTE_CDMA_AND_EVDO:
+                case Phone.NT_MODE_LTE_GSM_WCDMA:
+                case Phone.NT_MODE_LTE_CMDA_EVDO_GSM_WCDMA:
+                case Phone.NT_MODE_LTE_ONLY:
+                case Phone.NT_MODE_LTE_WCDMA:
+                    return R.drawable.ic_qs_lte_on;
+                case Phone.NT_MODE_WCDMA_ONLY:
+                case Phone.NT_MODE_CDMA_NO_EVDO:
+                case Phone.NT_MODE_EVDO_NO_CDMA:
+                case Phone.NT_MODE_GSM_ONLY:
+                case Phone.NT_MODE_CDMA:
+                case Phone.NT_MODE_WCDMA_PREF:
+                case Phone.NT_MODE_GSM_UMTS:
+                    return R.drawable.ic_qs_3g_on;
+            }
+        } else {
+            switch (state) {
+                case Phone.NT_MODE_GLOBAL:
+                case Phone.NT_MODE_LTE_CDMA_AND_EVDO:
+                case Phone.NT_MODE_LTE_GSM_WCDMA:
+                case Phone.NT_MODE_LTE_CMDA_EVDO_GSM_WCDMA:
+                case Phone.NT_MODE_LTE_ONLY:
+                case Phone.NT_MODE_LTE_WCDMA:
+                    return R.drawable.ic_qs_lte_on;
+                case Phone.NT_MODE_WCDMA_ONLY:
+                    return R.drawable.ic_qs_3g_on;
+                case Phone.NT_MODE_CDMA_NO_EVDO:
+                case Phone.NT_MODE_EVDO_NO_CDMA:
+                case Phone.NT_MODE_GSM_ONLY:
+                    return R.drawable.ic_qs_2g_on;
+                case Phone.NT_MODE_CDMA:
+                case Phone.NT_MODE_WCDMA_PREF:
+                case Phone.NT_MODE_GSM_UMTS:
+                    return R.drawable.ic_qs_2g3g_on;
+            }
         }
         return R.drawable.ic_qs_unexpected_network;
     }

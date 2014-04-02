@@ -555,7 +555,7 @@ class QuickSettingsModel implements BluetoothStateChangeCallback,
 
     private QuickSettingsTileView mMobileNetworkTile;
     private RefreshCallback mMobileNetworkCallback;
-    private boolean mToroRIL = SystemProperties.getInt("ro.telephony.toroRIL", 0) == 1;
+    private boolean mToroRIL;
     private State mMobileNetworkState = new State();
 
     private QuickSettingsTileView mBluetoothTile;
@@ -670,6 +670,7 @@ class QuickSettingsModel implements BluetoothStateChangeCallback,
         mSleepObserver.startObserving();
         mRingerObserver = new RingerObserver(mHandler);
         mRingerObserver.startObserving();
+        mToroRIL = SystemProperties.getInt("ro.telephony.toroRIL", 0) == 1;
         mMobileNetworkObserver = new NetworkObserver(mHandler);
         mMobileNetworkObserver.startObserving();
 

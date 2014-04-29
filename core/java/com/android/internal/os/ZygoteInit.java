@@ -16,8 +16,8 @@
 
 package com.android.internal.os;
 
-import static libcore.io.OsConstants.S_IRWXG;
-import static libcore.io.OsConstants.S_IRWXO;
+import static android.system.OsConstants.S_IRWXG;
+import static android.system.OsConstants.S_IRWXO;
 
 import android.content.res.Resources;
 import android.content.res.TypedArray;
@@ -28,14 +28,14 @@ import android.os.Process;
 import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.os.Trace;
+import android.system.Os;
+import android.system.OsConstants;
 import android.util.EventLog;
 import android.util.Log;
 
 import dalvik.system.VMRuntime;
 
 import libcore.io.IoUtils;
-import libcore.io.Libcore;
-import libcore.io.OsConstants;
 
 import java.io.BufferedReader;
 import java.io.FileDescriptor;
@@ -473,7 +473,7 @@ public class ZygoteInit {
         closeServerSocket();
 
         // set umask to 0077 so new files and directories will default to owner-only permissions.
-        Libcore.os.umask(S_IRWXG | S_IRWXO);
+        Os.umask(S_IRWXG | S_IRWXO);
 
         if (parsedArgs.niceName != null) {
             Process.setArgV0(parsedArgs.niceName);

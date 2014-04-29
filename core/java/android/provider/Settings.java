@@ -2408,6 +2408,27 @@ public final class Settings {
         public static final String VIBRATE_WHEN_RINGING = "vibrate_when_ringing";
 
         /**
+         * Whether the phone ringtone should be played in an increasing manner
+         *
+         * @hide
+         */
+        public static final String INCREASING_RING = "increasing_ring";
+
+        /**
+         * Increase ringtone volume each ringing interval
+         *
+         * @hide
+         */
+        public static final String INCREASING_RING_INTERVAL = "increasing_ring_interval";
+
+        /**
+         * Volume level to start at for increasing ringtone
+         *
+         * @hide
+         */
+        public static final String INCREASING_RING_MIN_VOLUME = "increasing_ring_min_volume";
+
+        /**
          * Whether the audible DTMF tones are played by the dialer when dialing. The value is
          * boolean (1 or 0).
          */
@@ -3442,6 +3463,42 @@ public final class Settings {
         public static final String QUIET_HOURS_RINGER = "quiet_hours_ringer";
 
         /**
+         * Constant: Keep ringer on for all numbers during quiet hours
+         * @hide
+         */
+        public static final int QUIET_HOURS_RINGER_ALLOW_ALL = 0;
+
+        /**
+         * Constant: Only ring for numbers in contact list during quiet hours
+         * @hide
+         */
+        public static final int QUIET_HOURS_RINGER_CONTACTS_ONLY = 1;
+
+        /**
+         * Constant: Only ring for favorite contacts during quiet hours
+         * @hide
+         */
+        public static final int QUIET_HOURS_RINGER_FAVORITES_ONLY = 2;
+
+        /**
+         * Constant: Disable ringer during quiet hours
+         * @hide
+         */
+        public static final int QUIET_HOURS_RINGER_DISABLED = 3;
+
+        /**
+         * Whether to pause (overrule) quiet hours for the moment
+         * @hide
+         */
+        public static final String QUIET_HOURS_PAUSED = "quiet_hours_paused";
+
+        /**
+         * Whether to force on quiet hours for the moment
+         * @hide
+         */
+        public static final String QUIET_HOURS_FORCED = "quiet_hours_forced";
+
+        /**
          * Quick Settings Quick Pulldown
          *
          * @hide
@@ -3632,6 +3689,7 @@ public final class Settings {
             SIP_RECEIVE_CALLS,
             POINTER_SPEED,
             VIBRATE_WHEN_RINGING,
+            INCREASING_RING,
             RINGTONE,
             PHONE_BLACKLIST_ENABLED,
             PHONE_BLACKLIST_NOTIFY_ENABLED,

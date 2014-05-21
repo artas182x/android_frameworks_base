@@ -41,8 +41,6 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.res.Configuration;
 import android.content.res.Resources;
-import android.content.pm.PackageManager;
-import android.content.pm.PackageManager.NameNotFoundException;
 import android.database.ContentObserver;
 import android.graphics.Canvas;
 import android.graphics.ColorFilter;
@@ -119,15 +117,19 @@ import com.android.systemui.statusbar.policy.NetworkController;
 import com.android.systemui.statusbar.policy.NotificationRowLayout;
 import com.android.systemui.statusbar.policy.OnSizeChangedListener;
 import com.android.systemui.statusbar.policy.RotationLockController;
+import com.android.internal.util.omni.PackageUtils;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
 
+import com.android.internal.util.omni.DeviceUtils;
+import static com.android.internal.util.omni.DeviceUtils.IMMERSIVE_MODE_OFF;
+
 public class PhoneStatusBar extends BaseStatusBar implements DemoMode {
     static final String TAG = "PhoneStatusBar";
-    public static final boolean DEBUG = BaseStatusBar.DEBUG;
+    public static final boolean DEBUG = true;
     public static final boolean SPEW = false;
     public static final boolean DUMPTRUCK = true; // extra dumpsys info
     public static final boolean DEBUG_GESTURES = false;
@@ -294,6 +296,7 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode {
 
     private boolean mBrightnessControl = true;
     private boolean mCustomHeader = false;
+    private boolean mShowNavBar = false;
 
     private float mScreenWidth;
     private int mMinBrightness;
@@ -356,6 +359,9 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode {
                     Settings.System.SCREEN_BRIGHTNESS_MODE), false, this, UserHandle.USER_ALL);
             resolver.registerContentObserver(Settings.System.getUriFor(
                     Settings.System.STATUS_BAR_CUSTOM_HEADER), false, this, UserHandle.USER_ALL);
+            resolver.registerContentObserver(Settings.System.getUriFor(
+                    Settings.System.NAVIGATION_BAR_SHOW), false, this, UserHandle.USER_ALL);
+
             update();
         }
 
@@ -377,6 +383,15 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode {
             mCustomHeader = Settings.System.getIntForUser(
                     resolver, Settings.System.STATUS_BAR_CUSTOM_HEADER, 0
                     , UserHandle.USER_CURRENT) == 1;
+            boolean showNavBar = Settings.System.getIntForUser(
+                    resolver, Settings.System.NAVIGATION_BAR_SHOW, 0
+                    , UserHandle.USER_CURRENT) == 1;
+            if (showNavBar != mShowNavBar){
+                // TODO disable immersive on value change
+                Settings.System.putIntForUser(resolver, Settings.System.IMMERSIVE_MODE
+                        , IMMERSIVE_MODE_OFF, UserHandle.USER_CURRENT);
+                updateNavigationBar();
+            }
             updateCustomHeaderStatus();
 
         }
@@ -610,9 +625,9 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode {
         updateShowSearchHoldoff();
 
         try {
-            boolean showNav = mWindowManagerService.hasNavigationBar();
-            if (DEBUG) Log.v(TAG, "hasNavigationBar=" + showNav);
-            if (showNav) {
+            mShowNavBar = mWindowManagerService.hasNavigationBar();
+            if (DEBUG) Log.v(TAG, "hasNavigationBar=" + mShowNavBar);
+            if (mShowNavBar) {
                 mNavigationBarView =
                     (NavigationBarView) View.inflate(context, R.layout.navigation_bar, null);
 
@@ -3003,18 +3018,6 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode {
         }
     };
 
-    private boolean isAvailableApp(String packageName) {
-        final PackageManager pm = mContext.getPackageManager();
-        try {
-            pm.getPackageInfo(packageName, PackageManager.GET_ACTIVITIES);
-            int enabled = pm.getApplicationEnabledSetting(packageName);
-            return enabled != PackageManager.COMPONENT_ENABLED_STATE_DISABLED &&
-                enabled != PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER;
-        } catch (NameNotFoundException e) {
-            return false;
-        }
-    }
-
     private View.OnClickListener mClockClickListener = new View.OnClickListener() {
         public void onClick(View v) {
             Intent clockShortcutIntent = null;
@@ -3030,7 +3033,7 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode {
 
             if(clockShortcutIntent != null) {
                 String shortcutPackage = clockShortcutIntent.getComponent().getPackageName();
-                if (isAvailableApp(shortcutPackage)){
+                if (PackageUtils.isAvailableApp(shortcutPackage, mContext)){
                     startActivityDismissingKeyguard(clockShortcutIntent, true);
                 } else {
                     // reset to default
@@ -3060,7 +3063,7 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode {
 
             if(calendarShortcutIntent != null) {
                 String shortcutPackage = calendarShortcutIntent.getComponent().getPackageName();
-                if (isAvailableApp(shortcutPackage)){
+                if (PackageUtils.isAvailableApp(shortcutPackage, mContext)){
                     startActivityDismissingKeyguard(calendarShortcutIntent, true);
                 } else {
                     // reset to default
@@ -3468,5 +3471,33 @@ public class PhoneStatusBar extends BaseStatusBar implements DemoMode {
         if (v instanceof DemoMode) {
             ((DemoMode)v).dispatchDemoCommand(command, args);
         }
+    }
+
+    private void updateNavigationBar() {
+        boolean show = DeviceUtils.deviceSupportNavigationBar(mContext);
+        if (DEBUG) Log.v(TAG, "updateNavigationBar=" + show);
+
+        if (show) {
+            if (mNavigationBarView == null) {
+                mNavigationBarView =
+                    (NavigationBarView) View.inflate(mContext, R.layout.navigation_bar, null);
+
+                mNavigationBarView.setDisabledFlags(mDisabled);
+                mNavigationBarView.setBar(this);
+                mNavigationBarView.setOnTouchListener(new View.OnTouchListener() {
+                    @Override
+                    public boolean onTouch(View v, MotionEvent event) {
+                        checkUserAutohide(v, event);
+                        return false;
+                    }});
+                addNavigationBar();
+            }
+         } else {
+            if (mNavigationBarView != null){
+                mWindowManager.removeViewImmediate(mNavigationBarView);
+                mNavigationBarView = null;
+            }
+         }
+         mShowNavBar = show;
     }
 }

@@ -42,7 +42,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
-import android.content.pm.PackageManager.NameNotFoundException;
 import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.content.res.XmlResourceParser;
@@ -76,6 +75,7 @@ import android.view.KeyEvent;
 import android.view.Surface;
 import android.view.VolumePanel;
 import android.view.WindowManager;
+import com.android.internal.util.omni.PackageUtils;
 
 import com.android.internal.telephony.ITelephony;
 import com.android.internal.util.XmlUtils;
@@ -4418,14 +4418,19 @@ public class AudioService extends IAudioService.Stub {
                 // Only run when headset is inserted and is enabled at settings
                 int plugged = intent.getIntExtra("state", 0);
 
-                String headsetPlugIntenatUri = Settings.System.getStringForUser(
-                    context.getContentResolver(), Settings.System.HEADSET_PLUG_ENABLED, UserHandle.USER_CURRENT);
+                String headsetPlugIntenatUri = Settings.System.getStringForUser(context.getContentResolver(),
+                        Settings.System.HEADSET_PLUG_ENABLED, UserHandle.USER_CURRENT);
+                boolean disableMusicActive = Settings.System.getIntForUser(context.getContentResolver(),
+                        Settings.System.HEADSET_PLUG_MUSIC_ACTIVE, 1, UserHandle.USER_CURRENT) == 1;
 
                 Intent headsetPlugIntent = null;
 
-                if(plugged == 1 && headsetPlugIntenatUri != null) {
+                if (plugged == 1 && headsetPlugIntenatUri != null){
+                    if (disableMusicActive && isLocalOrRemoteMusicActive()) {
+                        return;
+                    }
                     // Run default music app
-                    if(headsetPlugIntenatUri.equals(Settings.System.HEADSET_PLUG_SYSTEM_DEFAULT)){
+                    if (headsetPlugIntenatUri.equals(Settings.System.HEADSET_PLUG_SYSTEM_DEFAULT)) {
 
                         headsetPlugIntent = Intent.makeMainSelectorActivity(Intent.ACTION_MAIN,
                             Intent.CATEGORY_APP_MUSIC);
@@ -4439,12 +4444,12 @@ public class AudioService extends IAudioService.Stub {
                             headsetPlugIntent = null;
                         }
 
-                        if(headsetPlugIntent != null) {
+                        if (headsetPlugIntent != null) {
 
                             String mPackage = headsetPlugIntent.getComponent()
                                 .getPackageName();
 
-                            if (isAvailableApp(mPackage)) {
+                            if (PackageUtils.isAvailableApp(mPackage, context)) {
                                headsetPlugIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                                context.startActivityAsUser(headsetPlugIntent, UserHandle.CURRENT);
                             } else {
@@ -4459,17 +4464,6 @@ public class AudioService extends IAudioService.Stub {
         }
     }
 
-    private boolean isAvailableApp(String packageName) {
-        final PackageManager pm = mContext.getPackageManager();
-        try {
-            pm.getPackageInfo(packageName, PackageManager.GET_ACTIVITIES);
-            int enabled = pm.getApplicationEnabledSetting(packageName);
-            return enabled != PackageManager.COMPONENT_ENABLED_STATE_DISABLED &&
-                enabled != PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER;
-        } catch (NameNotFoundException e) {
-            return false;
-        }
-    }
     //==========================================================================================
     // RemoteControlDisplay / RemoteControlClient / Remote info
     //==========================================================================================

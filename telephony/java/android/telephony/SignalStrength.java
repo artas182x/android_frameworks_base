@@ -580,10 +580,11 @@ public class SignalStrength implements Parcelable {
         // signal, its better to show 0 bars to the user in such cases.
         // asu = 99 is a special case, where the signal strength is unknown.
         int asu = getGsmSignalStrength();
-        if (asu <= 2 || asu == 99) level = SIGNAL_STRENGTH_NONE_OR_UNKNOWN;
-        else if (asu >= 12) level = SIGNAL_STRENGTH_GREAT;
-        else if (asu >= 8)  level = SIGNAL_STRENGTH_GOOD;
-        else if (asu >= 5)  level = SIGNAL_STRENGTH_MODERATE;
+        int dbm = getDbm();
+        if (dbm <= -113 || asu <= 2 || asu == 99) level = SIGNAL_STRENGTH_NONE_OR_UNKNOWN;
+        else if (dbm >= -89) level = SIGNAL_STRENGTH_GREAT;
+        else if (dbm >= -97)  level = SIGNAL_STRENGTH_GOOD;
+        else if (dbm >= -103)  level = SIGNAL_STRENGTH_MODERATE;
         else level = SIGNAL_STRENGTH_POOR;
         if (DBG) log("getGsmLevel=" + level);
         return level;

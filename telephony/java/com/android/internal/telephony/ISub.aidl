@@ -167,6 +167,4 @@ interface ISub {
     int setSubState(long subId, int subStatus);
 
     int getSubState(long subId);
-
-    long getOnDemandDataSubId();
 }
